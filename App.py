@@ -30,7 +30,7 @@ except Exception:
 st.set_page_config(page_title="Predictive Healthcare Data Analysis", layout="wide", page_icon="💊")
 
 # Load models from local 'models' folder
-MODEL_DIR = "models"
+MODEL_DIR = "model"
 diabetes_model = pickle.load(open(os.path.join(MODEL_DIR, 'diabetes_model.sav'), 'rb'))
 heart_disease_model = pickle.load(open(os.path.join(MODEL_DIR, 'Heart_model.sav'), 'rb'))
 parkinsons_model = pickle.load(open(os.path.join(MODEL_DIR, 'parkinsons_model.sav'), 'rb'))
