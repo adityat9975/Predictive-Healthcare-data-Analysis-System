@@ -19,9 +19,9 @@ medical_input_collection = db['MedicalInputs']  # Collection for storing medical
 st.set_page_config(page_title="Main Project", layout="wide", page_icon="??")  # Replace the icon with a valid emoji
 
 # Load models
-diabetes_model = pickle.load(open('C:/Users/OPUS/Desktop/Atharva/FOURTH YEAR/PROJECT/Main/Saved models/diabetes_model.sav', 'rb'))
-heart_disease_model = pickle.load(open('C:/Users/OPUS/Desktop/Atharva/FOURTH YEAR/PROJECT/Main/Saved models/Heart_model.sav', 'rb'))
-parkinsons_model = pickle.load(open('C:/Users/OPUS/Desktop/Atharva/FOURTH YEAR/PROJECT/Main/Saved models/parkinsons_model.sav', 'rb'))
+diabetes_model = pickle.load(open('C:/Users/Admin/Desktop/projects/project/diabetes_model.sav', 'rb'))
+heart_disease_model = pickle.load(open('C:/Users/Admin/Desktop/projects/project/Heart_model.sav', 'rb'))
+parkinsons_model = pickle.load(open('C:/Users/Admin/Desktop/projects/project/parkinsons_model.sav', 'rb'))
 
 # Function to validate email format
 def is_valid_email(email):
