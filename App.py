@@ -2,13 +2,12 @@ import os
 import pickle
 import streamlit as st
 from streamlit_option_menu import option_menu
-import random
 import re
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import numpy as np
 
-# Optional MongoDB connection (only if MONGO_URI is set in environment variables)
+# Optional MongoDB connection (only if MONGO_URI is set)
 try:
     from pymongo import MongoClient
     mongo_uri = os.getenv("MONGO_URI", None)
@@ -26,10 +25,10 @@ except Exception:
     feedback_collection = None
     medical_input_collection = None
 
-# Set page configuration
+# Page config
 st.set_page_config(page_title="Predictive Healthcare Data Analysis", layout="wide", page_icon="💊")
 
-# Load models from local 'models' folder
+# Load models from local 'model' folder
 MODEL_DIR = "model"
 diabetes_model = pickle.load(open(os.path.join(MODEL_DIR, 'diabetes_model.sav'), 'rb'))
 heart_disease_model = pickle.load(open(os.path.join(MODEL_DIR, 'Heart_model.sav'), 'rb'))
@@ -40,15 +39,14 @@ def is_valid_email(email):
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(email_regex, email) is not None
 
-# Sidebar menu
-with st.sidebar:
-    selected = option_menu(
-        'Predictive Analysis for Multiple Disease',
-        ['Diabetes Analysis', 'Heart Disease Analysis', 'Parkinsons Analysis', 'Recommendations', 'Contact Form'],
-        menu_icon='hospital-fill',
-        icons=['activity', 'heart', 'person', 'umbrella', 'envelope'],
-        default_index=0
-    )
+# Display bar chart
+def display_input_bar_chart(user_input, feature_names):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(feature_names, user_input, color='skyblue')
+    ax.set_title("User Input Data")
+    ax.set_ylabel("Values")
+    plt.xticks(rotation=45, ha='right', fontsize=10)
+    st.pyplot(fig)
 
 # Risk classification function
 def classify_risk(prediction, user_input, disease_name):
@@ -64,15 +62,6 @@ def classify_risk(prediction, user_input, disease_name):
         return "Moderate Risk" if prediction[0] == 1 else "Low Risk"
     elif disease_name == 'parkinsons':
         return "High Risk" if prediction[0] == 1 else "Low Risk"
-
-# Display bar chart
-def display_input_bar_chart(user_input, feature_names):
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.bar(feature_names, user_input, color='skyblue')
-    ax.set_title("User Input Data")
-    ax.set_ylabel("Values")
-    plt.xticks(rotation=45, ha='right', fontsize=10)
-    st.pyplot(fig)
 
 # Safe DB save functions
 def save_medical_input_to_mongo(disease_name, user_input, result, risk_classification):
@@ -91,6 +80,16 @@ def save_feedback_to_mongo(name, email, message):
             "email": email,
             "message": message
         })
+
+# Sidebar menu
+with st.sidebar:
+    selected = option_menu(
+        'Predictive Analysis for Multiple Disease',
+        ['Diabetes Analysis', 'Heart Disease Analysis', 'Parkinsons Analysis', 'Recommendations', 'Contact Form'],
+        menu_icon='hospital-fill',
+        icons=['activity', 'heart', 'person', 'umbrella', 'envelope'],
+        default_index=0
+    )
 
 # Diabetes Analysis
 if selected == 'Diabetes Analysis':
@@ -119,7 +118,7 @@ if selected == 'Diabetes Analysis':
         save_medical_input_to_mongo('diabetes', user_input, result_text, risk)
 
 # Heart Disease Analysis
-if selected == 'Heart Disease Analysis':
+elif selected == 'Heart Disease Analysis':
     st.title('Heart Disease Analysis using ML')
     feature_names = ['Age', 'Gender', 'Chest Pain types', 'Resting Blood Pressure', 'Serum Cholesterol',
                      'Fasting Blood Sugar', 'Resting Electrocardiographic results', 'Maximum Heart Rate',
@@ -143,7 +142,7 @@ if selected == 'Heart Disease Analysis':
             st.error("Please enter valid numeric values.")
 
 # Parkinson's Disease Analysis
-if selected == "Parkinsons Analysis":
+elif selected == "Parkinsons Analysis":
     st.title("Parkinson's Disease Analysis using ML")
     feature_names = [
         'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)', 'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)',
@@ -168,8 +167,18 @@ if selected == "Parkinsons Analysis":
         except:
             st.error("Please enter valid numeric values.")
 
+# Recommendations Page
+elif selected == "Recommendations":
+    st.title("Health Recommendations")
+    st.write("Here you can provide custom recommendations based on disease risk levels.")
+    st.write("- Maintain a balanced diet")
+    st.write("- Exercise regularly")
+    st.write("- Get regular checkups")
+    st.write("- Reduce sugar intake for diabetes risk")
+    st.write("- Manage stress levels")
+
 # Contact Form
-if selected == 'Contact Form':
+elif selected == 'Contact Form':
     st.title('Contact Us')
     with st.form("contact_form"):
         name = st.text_input("Your Name")
