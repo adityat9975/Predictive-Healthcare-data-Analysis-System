@@ -653,57 +653,67 @@ prediction_manager = PredictionManager(models) if models else None
 # Authentication sidebar
 def render_auth_sidebar():
     """Render authentication sidebar"""
+    # Initialize session state for authentication
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.username = ""
     
     if not st.session_state.authenticated:
-        st.sidebar.title("🔐 Authentication")
+        st.sidebar.title("🔐 User Authentication")
         
-        auth_tab = st.sidebar.radio("Choose action", ["Login", "Sign Up"])
-        
-        if auth_tab == "Login":
-            with st.sidebar.form("login_form"):
+        # Use tabs for a cleaner UI
+        login_tab, signup_tab = st.sidebar.tabs(["Login", "Sign Up"])
+
+        with login_tab:
+            st.markdown("### Existing User Login")
+            with st.form("login_form"):
                 username = st.text_input("Username")
                 password = st.text_input("Password", type="password")
                 login_button = st.form_submit_button("Login")
                 
                 if login_button:
-                    if AuthManager.authenticate_user(username, password):
+                    if not username or not password:
+                        st.error("Username and password are required.")
+                    elif AuthManager.authenticate_user(username, password):
                         st.session_state.authenticated = True
                         st.session_state.username = username
-                        st.sidebar.success("Logged in successfully!")
-                        st.rerun()
+                        st.success("Logged in successfully!")
+                        st.experimental_rerun()
                     else:
-                        st.sidebar.error("Invalid credentials")
+                        st.error("Invalid username or password.")
         
-        else:  # Sign Up
-            with st.sidebar.form("signup_form"):
+        with signup_tab:
+            st.markdown("### New User Sign Up")
+            with st.form("signup_form"):
                 new_username = st.text_input("Choose Username")
                 email = st.text_input("Email")
                 new_password = st.text_input("Choose Password", type="password")
                 confirm_password = st.text_input("Confirm Password", type="password")
-                signup_button = st.form_submit_button("Sign Up")
+                signup_button = st.form_submit_button("Create Account")
                 
                 if signup_button:
                     # Validation
-                    if not ValidationManager.is_valid_email(email):
-                        st.sidebar.error("Invalid email format")
+                    if not new_username or not email or not new_password or not confirm_password:
+                        st.error("All fields are required.")
+                    elif not ValidationManager.is_valid_email(email):
+                        st.error("Invalid email format.")
                     elif new_password != confirm_password:
-                        st.sidebar.error("Passwords don't match")
+                        st.error("Passwords do not match.")
                     elif len(new_password) < 6:
-                        st.sidebar.error("Password must be at least 6 characters")
+                        st.error("Password must be at least 6 characters.")
                     elif AuthManager.create_user(new_username, email, new_password):
-                        st.sidebar.success("Account created! Please login.")
+                        st.success("Account created successfully! Please login.")
+                        st.experimental_rerun()
                     else:
-                        st.sidebar.error("Username or email already exists")
+                        st.error("Username or email already exists.")
     
     else:
+        # Display user info and logout button if authenticated
         st.sidebar.title(f"👋 Welcome, {st.session_state.username}!")
         if st.sidebar.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = ""
-            st.rerun()
+            st.experimental_rerun()
 
 # Main app
 def main():
