@@ -853,8 +853,3 @@ def render_dashboard():
             if st.button("🧠 Parkinson's Test", use_container_width=True):
                 st.session_state.page = 'Parkinsons Analysis'
                 st.rerun()
-
-def render_diabetes_analysis():
-    """Render enhanced diabetes analysis page"""
-    st.title('🩺 Diabetes Risk Analysis')
-    st.markdown("*
