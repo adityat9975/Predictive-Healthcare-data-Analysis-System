@@ -678,7 +678,7 @@ def render_auth_sidebar():
                         st.session_state.authenticated = True
                         st.session_state.username = username
                         st.success("Logged in successfully!")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Invalid username or password.")
         
@@ -703,7 +703,7 @@ def render_auth_sidebar():
                         st.error("Password must be at least 6 characters.")
                     elif AuthManager.create_user(new_username, email, new_password):
                         st.success("Account created successfully! Please login.")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Username or email already exists.")
     
@@ -713,7 +713,7 @@ def render_auth_sidebar():
         if st.sidebar.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = ""
-            st.experimental_rerun()
+            st.rerun()
 
 # Main app
 def main():
