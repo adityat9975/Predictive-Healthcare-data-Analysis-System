@@ -287,12 +287,10 @@ class VisualizationManager:
             return VisualizationManager.create_input_bar_chart(user_input, feature_names, title)
         
         # Normalize values for better visualization
-        normalized_input = []
-        for val in user_input:
-            if val == 0:
-                normalized_input.append(0)
-            else:
-                normalized_input.append(min(val / max(user_input) * 100, 100))
+        # In a real app, this would be based on min/max of the original training data.
+        # For now, we'll do a simple normalization.
+        max_val = max(user_input) if any(v > 0 for v in user_input) else 1
+        normalized_input = [min(val / max_val, 1) * 100 for val in user_input]
         
         fig = go.Figure()
         
@@ -394,7 +392,7 @@ class VisualizationManager:
             df, 
             x='timestamp', 
             y='probability',
-            color='disease',
+            color='disease_name',
             title='Prediction History Over Time',
             markers=True
         )
@@ -475,7 +473,15 @@ class PredictionManager:
                 else: return "Low Risk"
         
         elif disease_name == 'heart_disease':
-            return "High Risk" if prediction == 1 else "Low Risk"
+            if prediction == 1:
+                return "High Risk"
+            else:
+                # Add more nuance for heart disease risk
+                age = user_input[0] if len(user_input) > 0 else 0
+                cholesterol = user_input[9] if len(user_input) > 9 else 0
+                if age > 50 and cholesterol > 240:
+                    return "Moderate Risk"
+                return "Low Risk"
         
         elif disease_name == 'parkinsons':
             return "High Risk" if prediction == 1 else "Low Risk"
@@ -892,94 +898,151 @@ def render_diabetes_analysis():
         with st.spinner("Analyzing data..."):
             time.sleep(2)  # Simulate processing time
             try:
-                # Prediction
+                # Make prediction
                 result = prediction_manager.predict_with_confidence('diabetes', user_input)
                 
-                # Save and display
+                # Save result
                 DataManager.save_prediction_result(result, st.session_state.username)
-                display_prediction_results(result, user_input, feature_names)
-            except ValueError as e:
-                st.error(f"Prediction error: {e}")
-            except Exception:
-                st.error("An unexpected error occurred during prediction.")
-    elif predict_button and not prediction_manager:
-        st.warning("Prediction models are not loaded. Please contact support.")
+                
+                # Display results
+                st.markdown("---")
+                st.markdown(f"## 🩺 Prediction Result: **{result.disease.title()}**")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(VisualizationManager.create_risk_gauge(result.probability, result.risk_level), use_container_width=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="prediction-card">
+                        <h3>Prediction Details</h3>
+                        <p>Your model prediction indicates a **{"Positive" if result.prediction == 1 else "Negative"}** result.</p>
+                        <p>The confidence of this prediction is: **{result.confidence*100:.2f}%**</p>
+                        <p>Your current risk level is: <span class="risk-{result.risk_level.split()[0].lower()}">{result.risk_level}</span></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("### Your Input Data")
+                    st.dataframe(pd.DataFrame([user_input], columns=feature_names), use_container_width=True)
+                
+                st.markdown("---")
+                st.markdown("### 📊 Input Feature Analysis")
+                fig = VisualizationManager.create_input_radar_chart(user_input, feature_names, "Your Input Values")
+                st.plotly_chart(fig, use_container_width=True)
 
-# New function to render Heart Disease Analysis page
+                st.success("Prediction complete! See your full health report in the 'Reports & Export' section.")
+
+            except ValueError as ve:
+                st.error(f"Prediction error: {ve}. Please ensure your model files are correct.")
+            except Exception as e:
+                st.error(f"An unexpected error occurred during prediction: {e}")
+    elif predict_button and not prediction_manager:
+        st.error("ML models are not loaded. Please check the `model` folder and ensure the files exist.")
+
 def render_heart_disease_analysis():
     st.title("❤️ Heart Disease Prediction Analysis")
     st.markdown("### Enter the patient's medical details to predict the risk of Heart Disease.")
     
-    col1, col2, col3 = st.columns(3)
+    # Input form for Heart Disease
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        age = st.number_input('Age', min_value=1, max_value=120, value=50)
+        age = st.number_input('Age', min_value=1, max_value=120, value=52)
         sex = st.selectbox('Sex', options=[1, 0], format_func=lambda x: "Male" if x == 1 else "Female")
-        cp = st.selectbox('Chest Pain Type', options=[0, 1, 2, 3], format_func=lambda x: f"Type {x}")
-        trestbps = st.number_input('Resting Blood Pressure', min_value=0, max_value=200, value=120)
-        chol = st.number_input('Serum Cholestoral in mg/dl', min_value=0, max_value=600, value=200)
+        cp = st.selectbox('Chest Pain Type', options=[0, 1, 2, 3])
+        trestbps = st.number_input('Resting Blood Pressure', min_value=80, max_value=200, value=120)
     with col2:
-        fbs = st.selectbox('Fasting Blood Sugar > 120 mg/dl', options=[1, 0], format_func=lambda x: "True" if x == 1 else "False")
-        restecg = st.selectbox('Resting Electrocardiographic results', options=[0, 1, 2])
-        thalach = st.number_input('Maximum Heart Rate Achieved', min_value=0, max_value=220, value=150)
-        exang = st.selectbox('Exercise Induced Angina', options=[1, 0], format_func=lambda x: "Yes" if x == 1 else "No")
+        chol = st.number_input('Serum Cholestoral in mg/dl', min_value=100, max_value=600, value=230)
+        fbs = st.selectbox('Fasting Blood Sugar > 120 mg/dl', options=[0, 1], format_func=lambda x: "Yes" if x == 1 else "No")
+        restecg = st.selectbox('Resting Electrocardiographic Results', options=[0, 1, 2])
+        thalach = st.number_input('Maximum Heart Rate Achieved', min_value=70, max_value=220, value=150)
     with col3:
-        oldpeak = st.number_input('ST depression induced by exercise', min_value=0.0, max_value=6.2, value=1.0, format="%.1f")
+        exang = st.selectbox('Exercise Induced Angina', options=[0, 1], format_func=lambda x: "Yes" if x == 1 else "No")
+        oldpeak = st.number_input('ST depression induced by exercise relative to rest', min_value=0.0, max_value=6.2, value=1.0, format="%.1f")
         slope = st.selectbox('Slope of the peak exercise ST segment', options=[0, 1, 2])
-        ca = st.selectbox('Number of major vessels colored by fluoroscopy', options=[0, 1, 2, 3, 4])
-        thal = st.selectbox('Thal', options=[0, 1, 2, 3], format_func=lambda x: f"Thal {x}")
-
+        ca = st.number_input('Number of major vessels (0-3) colored by flourosopy', min_value=0, max_value=4, value=0)
+    with col4:
+        thal = st.selectbox('Thal', options=[0, 1, 2, 3])
+        
     user_input = [age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal]
-    feature_names = ['Age', 'Sex', 'Chest Pain Type', 'Resting BP', 'Cholesterol', 'Fasting BS', 'ECG Results', 'Max Heart Rate', 'Exercise Angina', 'ST Depression', 'ST Slope', 'CA', 'Thal']
-
-    predict_button = st.button("Predict Heart Disease Risk")
+    feature_names = ['Age', 'Sex', 'Chest Pain Type', 'Resting BP', 'Cholesterol', 'Fasting Blood Sugar', 'Resting ECG', 'Max Heart Rate', 'Exercise Angina', 'Oldpeak', 'Slope', 'CA', 'Thal']
     
+    predict_button = st.button("Predict Heart Disease Risk")
+
     if predict_button and prediction_manager:
         with st.spinner("Analyzing data..."):
             time.sleep(2)
             try:
                 result = prediction_manager.predict_with_confidence('heart_disease', user_input)
                 DataManager.save_prediction_result(result, st.session_state.username)
-                display_prediction_results(result, user_input, feature_names)
-            except ValueError as e:
-                st.error(f"Prediction error: {e}")
-            except Exception:
-                st.error("An unexpected error occurred during prediction.")
-    elif predict_button and not prediction_manager:
-        st.warning("Prediction models are not loaded. Please contact support.")
+                
+                st.markdown("---")
+                st.markdown(f"## ❤️ Prediction Result: **{result.disease.title()}**")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(VisualizationManager.create_risk_gauge(result.probability, result.risk_level), use_container_width=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="prediction-card">
+                        <h3>Prediction Details</h3>
+                        <p>Your model prediction indicates a **{"Positive" if result.prediction == 1 else "Negative"}** result.</p>
+                        <p>The confidence of this prediction is: **{result.confidence*100:.2f}%**</p>
+                        <p>Your current risk level is: <span class="risk-{result.risk_level.split()[0].lower()}">{result.risk_level}</span></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("### Your Input Data")
+                    st.dataframe(pd.DataFrame([user_input], columns=feature_names), use_container_width=True)
+                
+                st.markdown("---")
+                st.markdown("### 📊 Input Feature Analysis")
+                fig = VisualizationManager.create_input_bar_chart(user_input, feature_names, "Your Input Values")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.success("Prediction complete! See your full heart health report in the 'Reports & Export' section.")
 
-# New function to render Parkinsons Analysis page
+            except ValueError as ve:
+                st.error(f"Prediction error: {ve}. Please ensure your model files are correct.")
+            except Exception as e:
+                st.error(f"An unexpected error occurred during prediction: {e}")
+    elif predict_button and not prediction_manager:
+        st.error("ML models are not loaded. Please check the `model` folder and ensure the files exist.")
+
 def render_parkinsons_analysis():
     st.title("🧠 Parkinson's Disease Prediction Analysis")
-    st.markdown("### Enter the patient's voice details to predict the risk of Parkinson's Disease.")
-
-    col1, col2 = st.columns(2)
+    st.markdown("### Enter the patient's voice data parameters to predict the risk of Parkinson's Disease.")
+    
+    # Input form for Parkinson's
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        fo = st.number_input('MDVP:Fo(Hz)', min_value=0.0, value=119.992)
-        fhi = st.number_input('MDVP:Fhi(Hz)', min_value=0.0, value=157.302)
-        flo = st.number_input('MDVP:Flo(Hz)', min_value=0.0, value=74.997)
-        jitter_percent = st.number_input('MDVP:Jitter(%)', min_value=0.0, value=0.00784)
-        jitter_abs = st.number_input('MDVP:Jitter(Abs)', min_value=0.0, value=0.00007)
-        rap = st.number_input('MDVP:RAP', min_value=0.0, value=0.00370)
-        ppq = st.number_input('MDVP:PPQ', min_value=0.0, value=0.00554)
-        ddp = st.number_input('Jitter:DDP', min_value=0.0, value=0.01109)
-        shimmer = st.number_input('MDVP:Shimmer', min_value=0.0, value=0.04374)
-        shimmer_db = st.number_input('MDVP:Shimmer(dB)', min_value=0.0, value=0.426)
-        apq3 = st.number_input('Shimmer:APQ3', min_value=0.0, value=0.02182)
+        fo = st.number_input('MDVP:Fo(Hz)', min_value=88.0, max_value=260.0, value=150.0)
+        fhi = st.number_input('MDVP:Fhi(Hz)', min_value=100.0, max_value=600.0, value=200.0)
+        flo = st.number_input('MDVP:Flo(Hz)', min_value=65.0, max_value=200.0, value=100.0)
     with col2:
-        apq5 = st.number_input('Shimmer:APQ5', min_value=0.0, value=0.03130)
-        apq = st.number_input('MDVP:APQ', min_value=0.0, value=0.02971)
-        dda = st.number_input('Shimmer:DDA', min_value=0.0, value=0.06545)
-        nhr = st.number_input('NHR', min_value=0.0, value=0.02211)
-        hnr = st.number_input('HNR', min_value=0.0, value=21.033)
-        rpde = st.number_input('RPDE', min_value=0.0, max_value=1.0, value=0.414783)
-        dfa = st.number_input('DFA', min_value=0.0, max_value=1.0, value=0.815285)
-        spread1 = st.number_input('spread1', min_value=-10.0, value=-4.813031)
-        spread2 = st.number_input('spread2', min_value=0.0, max_value=1.0, value=0.266482)
-        d2 = st.number_input('D2', min_value=0.0, max_value=10.0, value=2.301442)
-        ppe = st.number_input('PPE', min_value=0.0, max_value=1.0, value=0.284654)
-
-    user_input = [fo, fhi, flo, jitter_percent, jitter_abs, rap, ppq, ddp, shimmer, shimmer_db, apq3, apq5, apq, dda, nhr, hnr, rpde, dfa, spread1, spread2, d2, ppe]
-    feature_names = ['Fo(Hz)', 'Fhi(Hz)', 'Flo(Hz)', 'Jitter(%)', 'Jitter(Abs)', 'RAP', 'PPQ', 'DDP', 'Shimmer', 'Shimmer(dB)', 'APQ3', 'APQ5', 'APQ', 'DDA', 'NHR', 'HNR', 'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE']
+        jitter_abs = st.number_input('Jitter(Abs)', min_value=0.00001, max_value=0.0005, value=0.00005, format="%.5f")
+        rap = st.number_input('RAP', min_value=0.0005, max_value=0.004, value=0.001, format="%.4f")
+        ppq = st.number_input('PPQ', min_value=0.0005, max_value=0.004, value=0.001, format="%.4f")
+    with col3:
+        shimmer = st.number_input('Shimmer', min_value=0.01, max_value=0.1, value=0.04, format="%.3f")
+        shimmer_db = st.number_input('Shimmer(dB)', min_value=0.1, max_value=1.5, value=0.4, format="%.2f")
+        apq3 = st.number_input('APQ3', min_value=0.005, max_value=0.05, value=0.02, format="%.3f")
+    with col4:
+        apq5 = st.number_input('APQ5', min_value=0.005, max_value=0.05, value=0.02, format="%.3f")
+        apq = st.number_input('APQ', min_value=0.01, max_value=0.07, value=0.03, format="%.3f")
+        dda = st.number_input('DDA', min_value=0.005, max_value=0.01, value=0.005, format="%.4f")
+    with col5:
+        nhr = st.number_input('NHR', min_value=0.005, max_value=0.05, value=0.02, format="%.3f")
+        hnr = st.number_input('HNR', min_value=10.0, max_value=35.0, value=20.0)
+        rpde = st.number_input('RPDE', min_value=0.3, max_value=0.7, value=0.5, format="%.3f")
+        dfa = st.number_input('DFA', min_value=0.5, max_value=0.9, value=0.7, format="%.3f")
+        spread1 = st.number_input('spread1', min_value=-8.0, max_value=-2.0, value=-5.0, format="%.3f")
+        spread2 = st.number_input('spread2', min_value=0.0, max_value=0.5, value=0.2, format="%.3f")
+        d2 = st.number_input('D2', min_value=1.0, max_value=4.0, value=2.0, format="%.3f")
+        ppe = st.number_input('PPE', min_value=0.0, max_value=0.6, value=0.2, format="%.3f")
+    
+    user_input = [fo, fhi, flo, 0.00001, jitter_abs, rap, ppq, shimmer, shimmer_db, apq3, apq5, apq, dda, nhr, hnr, rpde, dfa, spread1, spread2, d2, ppe] # Reorder to match model
+    feature_names = ['MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)', 'Jitter(%)', 'Jitter(Abs)', 'RAP', 'PPQ', 'Shimmer', 'Shimmer(dB)', 'APQ3', 'APQ5', 'APQ', 'DDA', 'NHR', 'HNR', 'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE']
     
     predict_button = st.button("Predict Parkinson's Risk")
     
@@ -989,260 +1052,193 @@ def render_parkinsons_analysis():
             try:
                 result = prediction_manager.predict_with_confidence('parkinsons', user_input)
                 DataManager.save_prediction_result(result, st.session_state.username)
-                display_prediction_results(result, user_input, feature_names)
-            except ValueError as e:
-                st.error(f"Prediction error: {e}")
-            except Exception:
-                st.error("An unexpected error occurred during prediction.")
-    elif predict_button and not prediction_manager:
-        st.warning("Prediction models are not loaded. Please contact support.")
 
-# New function to render Comparison Tools page
+                st.markdown("---")
+                st.markdown(f"## 🧠 Prediction Result: **{result.disease.title()}**")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(VisualizationManager.create_risk_gauge(result.probability, result.risk_level), use_container_width=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="prediction-card">
+                        <h3>Prediction Details</h3>
+                        <p>Your model prediction indicates a **{"Positive" if result.prediction == 1 else "Negative"}** result.</p>
+                        <p>The confidence of this prediction is: **{result.confidence*100:.2f}%**</p>
+                        <p>Your current risk level is: <span class="risk-{result.risk_level.split()[0].lower()}">{result.risk_level}</span></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("### Your Input Data")
+                    st.dataframe(pd.DataFrame([user_input], columns=feature_names), use_container_width=True)
+                
+                st.markdown("---")
+                st.markdown("### 📊 Input Feature Analysis")
+                fig = VisualizationManager.create_input_bar_chart(user_input, feature_names, "Your Input Values")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.success("Prediction complete! See your full Parkinson's report in the 'Reports & Export' section.")
+
+            except ValueError as ve:
+                st.error(f"Prediction error: {ve}. Please ensure your model files are correct.")
+            except Exception as e:
+                st.error(f"An unexpected error occurred during prediction: {e}")
+    elif predict_button and not prediction_manager:
+        st.error("ML models are not loaded. Please check the `model` folder and ensure the files exist.")
+
 def render_comparison_tools():
-    st.title("🔬 Prediction Comparison Tools")
-    st.markdown("### Compare two different prediction scenarios or your current result with a historical one.")
-    
-    history = DataManager.get_user_history(st.session_state.username)
-    if not history:
-        st.warning("No prediction history available for comparison.")
+    st.title("🔬 Comparison Tools")
+    st.markdown("### Compare two of your previous test results side-by-side.")
+
+    history = DataManager.get_user_history(st.session_state.username, limit=50)
+    if len(history) < 2:
+        st.info("You need at least two test results to use this tool.")
         return
     
-    history_df = pd.DataFrame(history)
-    history_df['display_label'] = history_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M') + ' - ' + history_df['disease_name'].str.title().str.replace('_', ' ')
+    # Get a list of tests for the dropdowns
+    test_options = {f"{h['disease_name'].title()} - {h['timestamp'].strftime('%Y-%m-%d %H:%M')}": h for h in history}
+    options_list = list(test_options.keys())
     
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Scenario 1")
-        scenario1_option = st.selectbox("Select Prediction for Comparison 1", options=history_df['display_label'], key="scenario1")
-        if scenario1_option:
-            scenario1_data = history_df[history_df['display_label'] == scenario1_option].iloc[0]
-            st.info(f"Disease: {scenario1_data['disease_name'].title().replace('_', ' ')}\nRisk Level: {scenario1_data['risk_level']}\nProbability: {scenario1_data['probability']:.2f}")
-
+        selected_test1 = st.selectbox("Select Test 1", options=options_list, key="test1_select")
     with col2:
-        st.subheader("Scenario 2")
-        scenario2_option = st.selectbox("Select Prediction for Comparison 2", options=history_df['display_label'], key="scenario2")
-        if scenario2_option:
-            scenario2_data = history_df[history_df['display_label'] == scenario2_option].iloc[0]
-            st.info(f"Disease: {scenario2_data['disease_name'].title().replace('_', ' ')}\nRisk Level: {scenario2_data['risk_level']}\nProbability: {scenario2_data['probability']:.2f}")
+        selected_test2 = st.selectbox("Select Test 2", options=options_list, index=1, key="test2_select")
 
-    if st.button("Compare Scenarios"):
-        if scenario1_option and scenario2_option:
-            data_s1 = history_df[history_df['display_label'] == scenario1_option].iloc[0]
-            data_s2 = history_df[history_df['display_label'] == scenario2_option].iloc[0]
+    if selected_test1 and selected_test2:
+        data1 = test_options[selected_test1]
+        data2 = test_options[selected_test2]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("---")
+            st.subheader(f"Test 1: {data1['disease_name'].title()}")
+            st.markdown(f"**Date:** {data1['timestamp'].strftime('%Y-%m-%d %H:%M')}")
+            st.markdown(f"**Prediction:** {'Positive' if data1['prediction_result'] == 1 else 'Negative'}")
+            st.markdown(f"**Risk Level:** <span class='risk-{data1['risk_level'].split()[0].lower()}'>{data1['risk_level']}</span>", unsafe_allow_html=True)
             
-            st.markdown("### Comparison Results")
-            comparison_df = pd.DataFrame({
-                "Metric": ["Disease", "Risk Level", "Probability", "Input Data"],
-                "Scenario 1": [data_s1['disease_name'].title().replace('_', ' '), data_s1['risk_level'], f"{data_s1['probability']:.2f}", data_s1['input_data']],
-                "Scenario 2": [data_s2['disease_name'].title().replace('_', ' '), data_s2['risk_level'], f"{data_s2['probability']:.2f}", data_s2['input_data']]
-            })
-            
-            st.dataframe(comparison_df)
+            # Show a chart for Test 1
+            if len(data1['input_data']) > 8:
+                fig = VisualizationManager.create_input_bar_chart(data1['input_data'], ['Feature']*len(data1['input_data']), "Test 1 Inputs")
+            else:
+                fig = VisualizationManager.create_input_radar_chart(data1['input_data'], ['Feature']*len(data1['input_data']), "Test 1 Inputs")
+            st.plotly_chart(fig, use_container_width=True)
 
-            # Additional visualization if same disease is compared
-            if data_s1['disease_name'] == data_s2['disease_name']:
-                st.subheader(f"Input Feature Comparison for {data_s1['disease_name'].title().replace('_', ' ')}")
-                
-                # Get feature names for the specific disease
-                if data_s1['disease_name'] == 'diabetes':
-                    feature_names = ['Pregnancies', 'Glucose', 'Blood Pressure', 'Skin Thickness', 'Insulin', 'BMI', 'Diabetes Pedigree Function', 'Age']
-                elif data_s1['disease_name'] == 'heart_disease':
-                    feature_names = ['Age', 'Sex', 'Chest Pain Type', 'Resting BP', 'Cholesterol', 'Fasting BS', 'ECG Results', 'Max Heart Rate', 'Exercise Angina', 'ST Depression', 'ST Slope', 'CA', 'Thal']
-                elif data_s1['disease_name'] == 'parkinsons':
-                    feature_names = ['Fo(Hz)', 'Fhi(Hz)', 'Flo(Hz)', 'Jitter(%)', 'Jitter(Abs)', 'RAP', 'PPQ', 'DDP', 'Shimmer', 'Shimmer(dB)', 'APQ3', 'APQ5', 'APQ', 'DDA', 'NHR', 'HNR', 'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE']
-                else:
-                    feature_names = [f"Feature {i+1}" for i in range(len(data_s1['input_data']))]
-                
-                compare_df = pd.DataFrame({
-                    'Feature': feature_names,
-                    'Scenario 1': data_s1['input_data'],
-                    'Scenario 2': data_s2['input_data']
-                })
+        with col2:
+            st.markdown("---")
+            st.subheader(f"Test 2: {data2['disease_name'].title()}")
+            st.markdown(f"**Date:** {data2['timestamp'].strftime('%Y-%m-%d %H:%M')}")
+            st.markdown(f"**Prediction:** {'Positive' if data2['prediction_result'] == 1 else 'Negative'}")
+            st.markdown(f"**Risk Level:** <span class='risk-{data2['risk_level'].split()[0].lower()}'>{data2['risk_level']}</span>", unsafe_allow_html=True)
 
-                fig = px.bar(compare_df, x='Feature', y=['Scenario 1', 'Scenario 2'],
-                             barmode='group', title="Input Feature Comparison")
-                st.plotly_chart(fig, use_container_width=True)
+            # Show a chart for Test 2
+            if len(data2['input_data']) > 8:
+                fig = VisualizationManager.create_input_bar_chart(data2['input_data'], ['Feature']*len(data2['input_data']), "Test 2 Inputs")
+            else:
+                fig = VisualizationManager.create_input_radar_chart(data2['input_data'], ['Feature']*len(data2['input_data']), "Test 2 Inputs")
+            st.plotly_chart(fig, use_container_width=True)
 
-
-# New function to render Reports & Export page
 def render_reports_export():
     st.title("📄 Reports & Data Export")
-    st.markdown("### Generate and download detailed health reports and your historical data.")
-    
-    history_data = DataManager.get_user_history(st.session_state.username)
-    if not history_data:
-        st.warning("No historical data available to generate reports or export.")
+    st.markdown("### Generate and download detailed reports of your health predictions.")
+
+    history = DataManager.get_user_history(st.session_state.username)
+    if not history:
+        st.info("You must complete at least one prediction to generate a report.")
         return
 
     st.markdown("---")
+    st.subheader("📋 Last Prediction Report")
+    last_result_dict = history[0]
     
-    st.subheader("Generate Comprehensive Health Report")
+    # Create a PredictionResult object from the stored dictionary
+    last_result = PredictionResult(
+        disease=last_result_dict['disease_name'],
+        prediction=last_result_dict['prediction_result'],
+        probability=last_result_dict['probability'],
+        risk_level=last_result_dict['risk_level'],
+        confidence=last_result_dict['confidence'],
+        timestamp=last_result_dict['timestamp'],
+        user_input=last_result_dict['input_data']
+    )
     
-    # Select a specific prediction to generate a report
-    history_df = pd.DataFrame(history_data)
-    history_df['display_label'] = history_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M') + ' - ' + history_df['disease_name'].str.title().str.replace('_', ' ')
+    report = ReportManager.generate_comprehensive_report(st.session_state.username, last_result)
     
-    selected_report = st.selectbox("Select a prediction to generate a detailed report:", options=history_df['display_label'])
+    st.json(report)
     
-    if selected_report:
-        selected_data = history_df[history_df['display_label'] == selected_report].iloc[0]
-        
-        # Create a dummy PredictionResult object
-        prediction_result = PredictionResult(
-            disease=selected_data['disease_name'],
-            prediction=selected_data['prediction_result'],
-            probability=selected_data['probability'],
-            risk_level=selected_data['risk_level'],
-            confidence=selected_data['confidence'],
-            timestamp=selected_data['timestamp'],
-            user_input=selected_data['input_data']
-        )
-        
-        if st.button("Generate Report"):
-            with st.spinner("Generating report..."):
-                report = ReportManager.generate_comprehensive_report(st.session_state.username, prediction_result)
-                
-                st.markdown("### Generated Report Preview")
-                
-                # Display report in a structured way
-                st.json(report)
-                
-                # Save as JSON for download
-                report_json = json.dumps(report, indent=4, default=str)
-                st.download_button(
-                    label="Download Report as JSON",
-                    data=report_json,
-                    file_name=f"health_report_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                    mime="application/json"
-                )
-
     st.markdown("---")
+    st.subheader("📥 Export Your Data")
     
-    st.subheader("Export Raw Data")
-    st.markdown("Download your entire prediction history as a CSV file.")
-    
-    export_df = DataManager.export_user_data(st.session_state.username)
-    if not export_df.empty:
-        csv = export_df.to_csv(index=False).encode('utf-8')
+    df = DataManager.export_user_data(st.session_state.username)
+    if not df.empty:
+        st.markdown("Here is a preview of your data. You can download it as a CSV file.")
+        st.dataframe(df, use_container_width=True)
+        csv_file = df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="Download Data as CSV",
-            data=csv,
-            file_name=f"healthcare_data_export_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            data=csv_file,
+            file_name=f"{st.session_state.username}_health_data.csv",
             mime="text/csv"
         )
     else:
-        st.info("No data available to export.")
-        
-# New function for displaying detailed results
-def display_prediction_results(result: PredictionResult, user_input: List[float], feature_names: List[str]):
-    st.success("Analysis Complete!")
-    
-    # Display result in a card
-    st.markdown(f"""
-    <div class="prediction-card">
-        <h3>Prediction Result for {result.disease.title().replace('_', ' ')}</h3>
-        <p>Your prediction result is: <b>{'Positive (You may have the disease)' if result.prediction == 1 else 'Negative (You are unlikely to have the disease)'}</b></p>
-        <p>Based on our analysis, your risk level is: <span class="risk-{result.risk_level.lower().replace(' ', '-')}">{result.risk_level}</span></p>
-        <p>Model Confidence: <b>{result.confidence * 100:.2f}%</b></p>
-        <p><i>Note: This is an AI-generated prediction. Always consult a medical professional for diagnosis.</i></p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    st.subheader("Detailed Analysis & Visualizations")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("#### Your Input Values")
-        # Display input data table
-        input_df = pd.DataFrame({
-            "Feature": feature_names,
-            "Value": user_input
-        })
-        st.dataframe(input_df, use_container_width=True)
-    
-    with col2:
-        st.markdown("#### Risk Assessment Gauge")
-        # Display risk gauge chart
-        gauge_fig = VisualizationManager.create_risk_gauge(result.probability, result.risk_level)
-        st.plotly_chart(gauge_fig, use_container_width=True)
+        st.info("No data to export.")
 
-    st.markdown("---")
-    st.subheader("Input Feature Visualization")
-    # Display radar or bar chart
-    if len(user_input) <= 8:
-        radar_fig = VisualizationManager.create_input_radar_chart(user_input, feature_names, "Your Input Values (Normalized)")
-        st.plotly_chart(radar_fig, use_container_width=True)
-    else:
-        bar_fig = VisualizationManager.create_input_bar_chart(user_input, feature_names, "Your Input Values")
-        st.plotly_chart(bar_fig, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("Personalized Health Recommendations")
-    recommendations = ReportManager._generate_recommendations(result)
-    for rec in recommendations:
-        st.markdown(f"✅ {rec}")
-
-# New function to render Health Recommendations page
 def render_recommendations():
-    st.title("💡 Health & Wellness Recommendations")
-    st.markdown("### Get general health advice and personalized recommendations based on your recent test results.")
-    
-    history_data = DataManager.get_user_history(st.session_state.username, limit=1)
-    
-    if history_data:
-        latest_result = PredictionResult(
-            disease=history_data[0]['disease_name'],
-            prediction=history_data[0]['prediction_result'],
-            probability=history_data[0]['probability'],
-            risk_level=history_data[0]['risk_level'],
-            confidence=history_data[0]['confidence'],
-            timestamp=history_data[0]['timestamp'],
-            user_input=history_data[0]['input_data']
-        )
+    st.title("💡 Health Recommendations")
+    st.markdown("### Personalized health advice based on your last prediction.")
+
+    history = DataManager.get_user_history(st.session_state.username)
+    if not history:
+        st.info("Complete a prediction to receive personalized recommendations.")
+        return
         
-        st.subheader(f"Recommendations based on your last test for {latest_result.disease.title().replace('_', ' ')}")
-        recommendations = ReportManager._generate_recommendations(latest_result)
-        for rec in recommendations:
-            st.markdown(f"✅ {rec}")
-    else:
-        st.info("No recent test results found. Please perform a test to get personalized recommendations.")
-
+    last_result_dict = history[0]
+    last_result = PredictionResult(
+        disease=last_result_dict['disease_name'],
+        prediction=last_result_dict['prediction_result'],
+        probability=last_result_dict['probability'],
+        risk_level=last_result_dict['risk_level'],
+        confidence=last_result_dict['confidence'],
+        timestamp=last_result_dict['timestamp'],
+        user_input=last_result_dict['input_data']
+    )
+    
+    st.markdown(f"Based on your last **{last_result.disease.title()}** prediction, here are some key recommendations:")
+    st.markdown(f"**Result:** {'Positive' if last_result.prediction == 1 else 'Negative'}")
+    st.markdown(f"**Risk Level:** <span class='risk-{last_result.risk_level.split()[0].lower()}'>{last_result.risk_level}</span>", unsafe_allow_html=True)
+    
+    recommendations = ReportManager._generate_recommendations(last_result)
+    
     st.markdown("---")
-    st.subheader("General Wellness Tips")
-    st.markdown("""
-    - **Balanced Diet:** Eat a variety of fruits, vegetables, whole grains, lean proteins, and healthy fats.
-    - **Regular Exercise:** Aim for at least 150 minutes of moderate-intensity aerobic exercise or 75 minutes of vigorous-intensity exercise per week.
-    - **Quality Sleep:** Get 7-9 hours of sleep per night to support physical and mental health.
-    - **Stress Management:** Practice mindfulness, meditation, or yoga to reduce stress levels.
-    - **Hydration:** Drink plenty of water throughout the day.
-    - **Regular Check-ups:** Schedule routine medical check-ups to monitor your health.
-    """)
+    st.subheader("Action Plan:")
+    for rec in recommendations:
+        st.markdown(f"- {rec}")
+    
+    st.info("Disclaimer: These recommendations are for informational purposes only and are not a substitute for professional medical advice. Always consult a qualified healthcare provider for diagnosis and treatment.")
 
-
-# New function to render Contact & Feedback page
 def render_contact_form():
-    st.title("📧 Contact & Feedback")
-    st.markdown("### We value your feedback! Please let us know how we can improve.")
-
+    st.title("✉️ Contact & Feedback")
+    st.markdown("### We value your feedback. Please use the form below to get in touch.")
+    
     with st.form("feedback_form"):
         name = st.text_input("Your Name")
         email = st.text_input("Your Email")
-        message = st.text_area("Your Message")
+        message = st.text_area("Your Message", height=200)
         submit_button = st.form_submit_button("Submit Feedback")
-
+        
         if submit_button:
-            if not ValidationManager.is_valid_email(email):
+            if not name or not email or not message:
+                st.error("Please fill in all fields.")
+            elif not ValidationManager.is_valid_email(email):
                 st.error("Please enter a valid email address.")
-            elif not name or not message:
-                st.error("Name and Message fields are required.")
             else:
-                try:
-                    DataManager.save_feedback(name, email, message)
-                    st.success("Thank you for your feedback! It has been submitted successfully.")
-                except Exception:
-                    st.error("An error occurred while submitting feedback. Please try again later.")
+                DataManager.save_feedback(name, email, message)
+                st.success("Thank you for your feedback! We will get back to you soon.")
 
 if __name__ == '__main__':
+    # Add this session state check to handle multi-page navigation correctly
+    if 'page' not in st.session_state:
+        st.session_state.page = 'Dashboard'
+        
     main()
